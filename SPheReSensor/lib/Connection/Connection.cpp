@@ -9,6 +9,9 @@
 
 ConnectionHandler Connection;
 
+
+
+
 bool ConnectionHandler::setup()
 {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
@@ -29,151 +32,197 @@ bool ConnectionHandler::setup()
   return connection_status = true;
 }
 
-void ConnectionHandler::sendData(float moisture, bool valve_state)
-{
-  Serial.println("Connecting to " + String(host));
-  String string_humidity = String(moisture, 1);
-  String string_valve_state = "";
-  if (valve_state)
-  {
-    string_valve_state = "100";
-  }
-  else
-  {
-    string_valve_state = "0";
-  }
+static String urlenc(const String& s){
+  String o; const char* h="0123456789ABCDEF";
+  for (char c: s){ if (isalnum((unsigned char)c)||c=='-'||c=='_'||c=='.'||c=='~') o+=c;
+    else { o+='%'; o+=h[(c>>4)&15]; o+=h[c&15]; } }
+  return o;
+}
 
+void ConnectionHandler::logEvent(const String& stage, int code, int bytes, float moisture, const String& msg){
+  String url = "https://script.google.com/macros/s/" + LOGS_WEB_APP_ID + "/exec";
+  url += "?device="   + urlenc(DEVICE_NAME);
+  url += "&stage="    + urlenc(stage);
+  url += "&code="     + String(code);
+  url += "&bytes="    + String(bytes);
+  url += "&moisture=" + String(moisture,1);
+  url += "&msg="      + urlenc(msg);
+  WiFiClientSecure client; client.setInsecure();
+  HTTPClient http; http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); http.setTimeout(20000);
+  if (http.begin(client, url)) { http.GET(); http.end(); }
+}
+
+void ConnectionHandler::sendData(float moisture, bool valve_state) {
   Serial.println("Sending data to Google Sheets.");
-  String url = "https://script.google.com/macros/s/" + GOOGLE_SHEETS_SCRIPT_ID + "/exec?" + "moisture=" + string_humidity + "&valvestate=" + string_valve_state;
-  Serial.print("requesting URL: ");
+
+  const String string_humidity   = String(moisture, 1);
+  const String string_valve_state = valve_state ? "100" : "0";
+  const String url =
+      "https://script.google.com/macros/s/" + GOOGLE_SHEETS_SCRIPT_ID +
+      "/exec?moisture=" + string_humidity + "&valvestate=" + string_valve_state;
+
+  Serial.print("[Sheets URL] ");
   Serial.println(url);
 
+  WiFiClientSecure client;
+  client.setInsecure();
+
   HTTPClient http;
-  http.begin(url);
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  int httpCode = http.GET();
-  if (httpCode > 0)
-  {
-    Serial.println("Data sent successfully!");
+  http.setReuse(true);
+  http.setTimeout(60000);
+
+  if (!http.begin(client, url)) {
+    Serial.println("HTTP begin() failed (Sheets).");
+    failure_count++;
+    return;
   }
-  else
-  {
+
+  const int httpCode = http.GET();
+  const String body  = http.getString();
+  Serial.printf("[Sheets] HTTP %d\n", httpCode);
+  if (httpCode != 200) {
+    Serial.println("[Sheets] Body:");
+    Serial.println(body);
     failure_count++;
   }
   http.end();
 }
 
-void ConnectionHandler::sendImage(float moisture, camera_fb_t *fb)
-{
-
-  // URL com parâmetro 'moisture' na query
+void ConnectionHandler::sendImage(float moisture, camera_fb_t *fb) {
   Serial.println("Sending image to Google Drive.");
-  String string_humidity = String(moisture, 1);
-  String url = "https://script.google.com/macros/s/" + GOOGLE_DRIVE_SCRIPT_ID + "/exec?" + "moisture=" + string_humidity;
 
-  const int maxRetries = 5;
-  int retryCount = 0;
-  bool success = false;
+  const String string_humidity = String(moisture, 1);
+  const String url =
+      "https://script.google.com/macros/s/" + GOOGLE_DRIVE_SCRIPT_ID +
+      "/exec?moisture=" + string_humidity;
+
+  Serial.print("[Drive URL] ");
+  Serial.println(url);
 
   // Verificação básica do JPEG
-  if (fb->len < 64 || fb->buf[0] != 0xFF || fb->buf[1] != 0xD8)
-  {
-    Serial.println("Error: Invalid or corrupt JPEG!");
-    esp_camera_fb_return(fb);
+  if (!fb || fb->len < 64 || fb->buf[0] != 0xFF || fb->buf[1] != 0xD8) {
+    Serial.println("Error: invalid/corrupt JPEG.");
+    if (fb) esp_camera_fb_return(fb);
+    failure_count++;
     return;
   }
 
-  while (retryCount < maxRetries && !success)
-  {
+  const int maxRetries = 5;
+  for (int attempt = 1; attempt <= maxRetries; ++attempt) {
     WiFiClientSecure client;
     client.setInsecure();
     client.setTimeout(60);
 
     HTTPClient http;
+    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // << importante
     http.setReuse(true);
     http.setTimeout(60000);
 
-    if (http.begin(client, url))
-    {
+    if (!http.begin(client, url)) {
+      Serial.println("HTTP begin() failed (Drive).");
+      failure_count++;
+    } else {
       http.addHeader("Content-Type", "image/jpeg");
+      const int httpCode = http.POST(fb->buf, fb->len);
+      const String body  = http.getString();
+      Serial.printf("[Drive] Attempt %d -> HTTP %d\n", attempt, httpCode);
 
-      // Envia a imagem
-      int httpCode = http.POST(fb->buf, fb->len);
-
-      if (httpCode == HTTP_CODE_OK || httpCode == HTTP_CODE_FOUND)
-      {
-        Serial.println("Image sent successfully!");
-        success = true;
+      if (httpCode == 200) {
+        Serial.println("[Drive] Image sent successfully.");
+        http.end();
+        esp_camera_fb_return(fb);
+        return;
       }
-      else
-      {
-        Serial.printf("Attempt %d: HTTP %d - %s\n", retryCount + 1, httpCode, http.errorToString(httpCode).c_str());
-        retryCount++;
-        delay(10000 * retryCount);
-      }
+      Serial.println("[Drive] Body:");
+      Serial.println(body);
       http.end();
     }
-    else
-    {
-      Serial.println("Failed to start HTTP connection");
-      retryCount++;
-    }
-    client.stop();
-    delay(1000);
+
+    // backoff simples
+    delay(10000 * attempt);
   }
 
-  if (!success)
-  {
-    Serial.println("Falha crítica: não foi possível enviar após tentativas");
-    // ESP.restart();
-    failure_count++;
-  }
+  Serial.println("[Drive] Critical failure: all attempts failed.");
   esp_camera_fb_return(fb);
+  failure_count++;
 }
 
-String ConnectionHandler::receiveData()
-{
 
-  HTTPClient http;
-
+String ConnectionHandler::receiveData() {
   Serial.println("Read data from Google Sheets.");
-  String url = "https://script.google.com/macros/s/" + GOOGLE_SHEETS_SCRIPT_ID + "/exec?read";
-  Serial.print("requesting URL: ");
+
+  const String url =
+      "https://script.google.com/macros/s/" + GOOGLE_SHEETS_SCRIPT_ID + "/exec?read=1";
+
+  Serial.print("[Sheets READ URL] ");
   Serial.println(url);
 
-  http.begin(url.c_str());
-  //-----------------------------------------------------------------------------------
-  // Removes the error "302 Moved Temporarily Error"
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  HTTPClient http;
   http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  //-----------------------------------------------------------------------------------
-  // Get the returning HTTP status code
-  int httpCode = http.GET();
-  Serial.print("HTTP Status Code: ");
-  Serial.println(httpCode);
-  //-----------------------------------------------------------------------------------
-  // if (httpCode <= 0)
-  // {
-  //   Serial.println("Error on HTTP request");
-  //   http.end();
-  //   failure_count++;
-  //   return "nowater,00,00";
-  // }
-  //-----------------------------------------------------------------------------------
-  // reading data comming from Google Sheet
-  String payload = http.getString();
-  Serial.println("Payload: " + payload);
-  //-----------------------------------------------------------------------------------
-  if (httpCode == 200)
-  {
-    http.end();
-    return payload;
-  }
-  else
-  {
-    http.end();
+  http.setTimeout(60000);
+
+  if (!http.begin(client, url)) {
+    Serial.println("HTTP begin() failed (Sheets read).");
     failure_count++;
     return "nowater,00,00";
   }
+
+  const int httpCode = http.GET();
+  const String payload = http.getString();
+  Serial.printf("[Sheets READ] HTTP %d\n", httpCode);
+  Serial.println("Payload: " + payload);
+
+  http.end();
+  if (httpCode == 200 && payload.length() > 0) return payload;
+
+  failure_count++;
+  return "nowater,00,00";
+}
+//teste:
+void ConnectionHandler::sendImageBuffer(float moisture, const uint8_t* data, size_t len) {
+  Serial.println("Sending image (TEST buffer) to Google Drive.");
+
+  const String url =
+      "https://script.google.com/macros/s/" + GOOGLE_DRIVE_SCRIPT_ID +
+      "/exec?moisture=" + String(moisture, 1);
+
+  Serial.print("[Drive URL] ");
+  Serial.println(url);
+
+  // Checagem mínima
+  if (!data || len < 64 || data[0] != 0xFF || data[1] != 0xD8) {
+    Serial.println("Error: invalid/corrupt JPEG buffer (len < 64 ou sem 0xFFD8).");
+    failure_count++;
+    return;
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+  client.setTimeout(60);
+
+  HTTPClient http;
+  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setReuse(true);
+  http.setTimeout(60000);
+
+  if (!http.begin(client, url)) {
+    Serial.println("HTTP begin() failed (Drive TEST).");
+    failure_count++;
+    return;
+  }
+
+  http.addHeader("Content-Type", "image/jpeg");
+  const int httpCode = http.POST(data, len);
+  const String body  = http.getString();
+  Serial.printf("[Drive TEST] HTTP %d\n", httpCode);
+  Serial.println(body);
+  http.end();
+
+  if (httpCode != 200) failure_count++;
 }
 
 void ConnectionHandler::close()

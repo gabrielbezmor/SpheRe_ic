@@ -9,26 +9,17 @@
 // #include "YourCredentials.h"// uncomment this line
 #include "system.h"
 
-class ConnectionHandler
-{
+class ConnectionHandler {
 public:
-    
-    // Dados para conexão com o Google Drive
-    const char *host = "script.google.com";
-    const int httpsPort = 443;
-
-    // Dados para o arquivo de imagem
-    String file_name = "filename=ESP32-CAM.jpg"; //"filename=ESP32-CAM.jpg";
-    String mime_type = "&mimetype=image/jpeg";   //"&mimetype=image/jpeg";
-    String image2string = "&data=";
-    int begin;
-    const int timeout = 10000; // 10"
     bool connection_status = false;
     bool setup();
     void sendData(float moisture, bool valve_state);
-    String urlencode(String str);
-    void sendImage(float moisture, camera_fb_t *fb);
+    void sendImage(float moisture, camera_fb_t* fb);
+    void sendImageBuffer(float moisture, const uint8_t* data, size_t len); //teste 
     String receiveData();
+    void logEvent(const String& stage, int code, int bytes, float moisture, const String& msg);
     void close();
+private:
+    const int timeout = 10000; // 10s
 };
 extern ConnectionHandler Connection;

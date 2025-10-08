@@ -8,3 +8,6 @@ extern const char *WIFI_PASS; // Put here your Wi-Fi password
 extern const String GOOGLE_SHEETS_SCRIPT_ID;
 // Google Drive Script ID (XIAO IMAGE FOLDER)
 extern const String GOOGLE_DRIVE_SCRIPT_ID;
+// Google Sheets script ID Observacao da camera
+extern const String LOGS_WEB_APP_ID;
+extern const char*  DEVICE_NAME;
