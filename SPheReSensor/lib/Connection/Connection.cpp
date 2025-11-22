@@ -16,12 +16,12 @@ bool ConnectionHandler::setup()
 {
   WiFi.begin(WIFI_SSID, WIFI_PASS);
   Serial.println("Waiting connection to WiFi..");
-  begin = millis();
+  unsigned long begin = millis();
   while (WiFi.status() != WL_CONNECTED)
   {
     delay(500);
     Serial.print(".");
-
+    printf(" failed (status=%d)\n", WiFi.status());
     if ((millis() - begin) > timeout)
     {
       failure_count++;
@@ -38,6 +38,8 @@ static String urlenc(const String& s){
     else { o+='%'; o+=h[(c>>4)&15]; o+=h[c&15]; } }
   return o;
 }
+
+// https://script.google.com/macros/s/AKfycbxOGKDgw1GcC6rqENq3CvNopTFDyFMk2jO_zbDYlYmUhw4Y-7ell3xzcCS_2aS0D3qP/exec
 
 void ConnectionHandler::logEvent(const String& stage, int code, int bytes, float moisture, const String& msg){
   String url = "https://script.google.com/macros/s/" + LOGS_WEB_APP_ID + "/exec";
@@ -115,8 +117,8 @@ void ConnectionHandler::sendImage(float moisture, camera_fb_t *fb) {
     client.setTimeout(60);
 
     HTTPClient http;
-    http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // << importante
-    http.setReuse(true);
+    // http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); // << importante
+    http.setReuse(false);
     http.setTimeout(60000);
 
     if (!http.begin(client, url)) {
@@ -128,13 +130,13 @@ void ConnectionHandler::sendImage(float moisture, camera_fb_t *fb) {
       const String body  = http.getString();
       Serial.printf("[Drive] Attempt %d -> HTTP %d\n", attempt, httpCode);
 
-      if (httpCode == 200) {
+      if (httpCode > 0 && httpCode >= 200 && httpCode < 350) {
         Serial.println("[Drive] Image sent successfully.");
         http.end();
         esp_camera_fb_return(fb);
         return;
       }
-      Serial.println("[Drive] Body:");
+      Serial.println("[Drive] Error Body:");
       Serial.println(body);
       http.end();
     }
@@ -205,8 +207,8 @@ void ConnectionHandler::sendImageBuffer(float moisture, const uint8_t* data, siz
   client.setTimeout(60);
 
   HTTPClient http;
-  http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
-  http.setReuse(true);
+  // http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS);
+  http.setReuse(false);
   http.setTimeout(60000);
 
   if (!http.begin(client, url)) {
@@ -215,9 +217,9 @@ void ConnectionHandler::sendImageBuffer(float moisture, const uint8_t* data, siz
     return;
   }
 
-  http.addHeader("Content-Type", "image/jpeg");
-  const int httpCode = http.POST(data, len);
-  const String body  = http.getString();
+  http.addHeader("Content-Type", "text/plain");
+  int httpCode = http.POST("");
+  String body = http.getString();
   Serial.printf("[Drive TEST] HTTP %d\n", httpCode);
   Serial.println(body);
   http.end();

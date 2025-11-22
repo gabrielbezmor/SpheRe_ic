@@ -27,7 +27,7 @@ class CameraHandler
 {
 public:
     camera_fb_t *fb = NULL;
-    camera_fb_t *image = NULL;
+    // camera_fb_t *image = NULL;
     // Defina em um arquivo de configuração (ex: config.h)
     const bool HIGH_RES = true;
     const bool LOW_RES = false;

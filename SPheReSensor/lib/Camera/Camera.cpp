@@ -120,8 +120,7 @@ camera_fb_t *CameraHandler::takeDayPicture()
   // Captura a imagem final em JPEG
   reset();
   fb = esp_camera_fb_get();
-  if (!fb)
-  {
+  if (!fb){
     Serial.println("Error capturing JPEG image.");
     // ESP.restart();
     failure_count++;
@@ -131,26 +130,29 @@ camera_fb_t *CameraHandler::takeDayPicture()
   return fb;
 }
 
-void CameraHandler::powerOff()
-{
-  // 1. Desinicializa a câmera (libera recursos)
-  esp_camera_deinit();
+void CameraHandler::powerOff() {
+    esp_camera_deinit();
 
-  // 2. Configura manualmente os pinos críticos para LOW
-  pinMode(XCLK_GPIO_NUM, OUTPUT);
-  digitalWrite(XCLK_GPIO_NUM, LOW); // Desliga o clock
+    if (XCLK_GPIO_NUM >= 0) {
+        pinMode(XCLK_GPIO_NUM, OUTPUT);
+        digitalWrite(XCLK_GPIO_NUM, LOW);
+    }
 
-  // 3. Desativa os pinos de dados (D0-D7)
-  const int dataPins[] = {Y2_GPIO_NUM, Y3_GPIO_NUM, Y4_GPIO_NUM, Y5_GPIO_NUM,
-                          Y6_GPIO_NUM, Y7_GPIO_NUM, Y8_GPIO_NUM, Y9_GPIO_NUM};
-  for (int pin : dataPins)
-  {
-    pinMode(pin, OUTPUT);
-    digitalWrite(pin, LOW);
-  }
-  pinMode(4, OUTPUT);           // GPIO for LED flash
-  digitalWrite(4, LOW);         // turn OFF flash LED
-  rtc_gpio_hold_en(GPIO_NUM_4); // make sure flash is held LOW in sleep
+    const int dataPins[] = {
+        Y2_GPIO_NUM, Y3_GPIO_NUM, Y4_GPIO_NUM, Y5_GPIO_NUM,
+        Y6_GPIO_NUM, Y7_GPIO_NUM, Y8_GPIO_NUM, Y9_GPIO_NUM
+    };
 
-  Serial.println("Camera turned off!");
+    for (int pin : dataPins) {
+        if (pin >= 0) {
+            pinMode(pin, OUTPUT);
+            digitalWrite(pin, LOW);
+        }
+    }
+
+    pinMode(4, OUTPUT);
+    digitalWrite(4, LOW);
+    rtc_gpio_hold_en(GPIO_NUM_4);
+
+    Serial.println("Camera turned off!");
 }
