@@ -28,6 +28,17 @@ void setup()
     // Desativa a detecção de brown-out
     WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0);
     Serial.begin(115200);
+    
+  
+    unsigned long start = millis();
+    /* Camera espera a deteccao
+    do monitor antes de inicializar, esperando 
+    ate 5 segundos*/
+    while (!Serial && (millis() - start < 5000)) { 
+    delay(10);
+    Serial.println("XIAO is connected and talking!");
+    }
+
     Connection.setup();
 
     Connection.sendImageBuffer(321.0, DUMMY_JPG, sizeof(DUMMY_JPG)); //teste
