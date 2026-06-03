@@ -41,8 +41,8 @@ static String urlenc(const String& s){
 
 // https://script.google.com/macros/s/AKfycbxOGKDgw1GcC6rqENq3CvNopTFDyFMk2jO_zbDYlYmUhw4Y-7ell3xzcCS_2aS0D3qP/exec
 
-void ConnectionHandler::logEvent(const String& stage, int code, int bytes, float moisture, const String& msg){
-  String url = "https://script.google.com/macros/s/" + LOGS_WEB_APP_ID + "/exec";
+/*void ConnectionHandler::logEvent(const String& stage, int code, int bytes, float moisture, const String& msg){
+  String url = "https://script.google.com/macros/s/" + String(LOGS_SCRIPT_ID) + "/exec";
   url += "?device="   + urlenc(DEVICE_NAME);
   url += "&stage="    + urlenc(stage);
   url += "&code="     + String(code);
@@ -52,7 +52,7 @@ void ConnectionHandler::logEvent(const String& stage, int code, int bytes, float
   WiFiClientSecure client; client.setInsecure();
   HTTPClient http; http.setFollowRedirects(HTTPC_STRICT_FOLLOW_REDIRECTS); http.setTimeout(20000);
   if (http.begin(client, url)) { http.GET(); http.end(); }
-}
+}*/
 
 void ConnectionHandler::sendData(float moisture, bool valve_state) {
   Serial.println("Sending data to Google Sheets.");
@@ -60,7 +60,7 @@ void ConnectionHandler::sendData(float moisture, bool valve_state) {
   const String string_humidity   = String(moisture, 1);
   const String string_valve_state = valve_state ? "100" : "0";
   const String url =
-      "https://script.google.com/macros/s/" + GOOGLE_SHEETS_SCRIPT_ID +
+      "https://script.google.com/macros/s/" + String(GOOGLE_SHEETS_SCRIPT_ID) +
       "/exec?moisture=" + string_humidity + "&valvestate=" + string_valve_state;
 
   Serial.print("[Sheets URL] ");
@@ -96,7 +96,7 @@ void ConnectionHandler::sendImage(float moisture, camera_fb_t *fb) {
 
   const String string_humidity = String(moisture, 1);
   const String url =
-      "https://script.google.com/macros/s/" + GOOGLE_DRIVE_SCRIPT_ID +
+      "https://script.google.com/macros/s/" + String(GOOGLE_DRIVE_SCRIPT_ID) +
       "/exec?moisture=" + string_humidity;
 
   Serial.print("[Drive URL] ");
@@ -155,7 +155,7 @@ String ConnectionHandler::receiveData() {
   Serial.println("Read data from Google Sheets.");
 
   const String url =
-      "https://script.google.com/macros/s/" + GOOGLE_SHEETS_SCRIPT_ID + "/exec?read=1";
+      "https://script.google.com/macros/s/" + String(GOOGLE_SHEETS_SCRIPT_ID) + "/exec?read=1";
 
   Serial.print("[Sheets READ URL] ");
   Serial.println(url);
@@ -189,7 +189,7 @@ void ConnectionHandler::sendImageBuffer(float moisture, const uint8_t* data, siz
   Serial.println("Sending image (TEST buffer) to Google Drive.");
 
   const String url =
-      "https://script.google.com/macros/s/" + GOOGLE_DRIVE_SCRIPT_ID +
+      "https://script.google.com/macros/s/" + String(GOOGLE_DRIVE_SCRIPT_ID) +
       "/exec?moisture=" + String(moisture, 1);
 
   Serial.print("[Drive URL] ");
